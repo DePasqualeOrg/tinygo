@@ -1,12 +1,8 @@
-//go:build (linux && !baremetal && !wasm_unknown && !nintendoswitch) || wasip1 || wasip2
+//go:build wasip1 || wasip2
 
 // Copyright 2009 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-
-// Note: this file is used for both Linux and WASI.
-// Eventually it might be better to spit it up, and make the syscall constants
-// match the typical WASI constants instead of the Linux-equivalents used here.
 
 package os
 
@@ -19,7 +15,6 @@ func fillFileStatFromSys(fs *fileStat, name string) {
 	fs.name = basename(name)
 	fs.size = fs.sys.Size
 	fs.modTime = timespecToTime(fs.sys.Mtim)
-	fs.mode = FileMode(fs.sys.Mode & 0777)
 	switch fs.sys.Mode & syscall.S_IFMT {
 	case syscall.S_IFBLK:
 		fs.mode |= ModeDevice
@@ -36,14 +31,16 @@ func fillFileStatFromSys(fs *fileStat, name string) {
 	case syscall.S_IFSOCK:
 		fs.mode |= ModeSocket
 	}
-	if fs.sys.Mode&syscall.S_ISGID != 0 {
-		fs.mode |= ModeSetgid
-	}
-	if fs.sys.Mode&syscall.S_ISUID != 0 {
-		fs.mode |= ModeSetuid
-	}
-	if fs.sys.Mode&syscall.S_ISVTX != 0 {
-		fs.mode |= ModeSticky
+	// WASI does not expose unix-style permission bits. Go programs commonly
+	// check Mode.Perm() (including path-walking helpers that gate on the
+	// executable bit), and observing all-zero perms produces spurious
+	// "permission denied"-style failures. Match mainline Go's
+	// src/os/stat_wasip1.go fallback: 0700 for directories, 0600 for
+	// everything else.
+	if fs.sys.Mode&syscall.S_IFMT == syscall.S_IFDIR {
+		fs.mode |= 0700
+	} else {
+		fs.mode |= 0600
 	}
 }
 
